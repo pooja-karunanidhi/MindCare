@@ -1,0 +1,95 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Represents a patient or a doctor in the system.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "The unique Firebase Auth ID." },
+        "email": { "type": "string", "format": "email", "description": "The user's email address." },
+        "displayName": { "type": "string", "description": "The user's full name." },
+        "photoURL": { "type": "string", "description": "The user's profile picture URL." },
+        "role": { "type": "string", "enum": ["patient", "doctor"], "description": "The user's role." },
+        "licenseId": { "type": "string", "description": "The doctor's unique license ID (only for doctors)." },
+        "specialization": { "type": "string", "description": "Doctor's area of expertise." },
+        "bio": { "type": "string", "description": "A short professional biography." },
+        "rating": { "type": "number", "description": "Average user rating." },
+        "experience": { "type": "number", "description": "Years of experience." },
+        "isVerified": { "type": "boolean", "description": "Whether the doctor's license is verified." }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Session": {
+      "title": "Session",
+      "description": "A mental health session between a patient and a doctor.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientId": { "type": "string", "description": "UID of the patient." },
+        "doctorId": { "type": "string", "description": "UID of the doctor." },
+        "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "completed"] },
+        "metrics": {
+          "type": "object",
+          "properties": {
+            "mood": { "type": "number" },
+            "stress": { "type": "number" },
+            "concern": { "type": "string" },
+            "urgency": { "type": "string", "enum": ["low", "medium", "high"] }
+          }
+        },
+        "scheduledAt": { "type": "string", "format": "date-time", "description": "When the session is scheduled for." },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "feedback": {
+          "type": "object",
+          "properties": {
+            "rating": { "type": "number", "description": "Patient's star rating (1-5)." },
+            "comment": { "type": "string", "description": "Patient's optional feedback comment." }
+          }
+        },
+        "doctorNotes": { "type": "string", "description": "Remedies and recommendations from the doctor, visible to the patient." }
+      },
+      "required": ["patientId", "doctorId", "status", "scheduledAt"]
+    },
+    "DoctorNote": {
+      "title": "DoctorNote",
+      "description": "Session remedies and recommendations visible to both doctor and patient.",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["text", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "A message within a session chat.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sessionId": { "type": "string" },
+        "senderId": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["sessionId", "senderId", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": "User",
+      "description": "User profiles."
+    },
+    "/sessions/{sessionId}": {
+      "schema": "Session",
+      "description": "Session records."
+    },
+    "/sessions/{sessionId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Chat messages for a specific session."
+    },
+    "/sessions/{sessionId}/notes/doctor": {
+      "schema": "DoctorNote",
+      "description": "Doctor remedies and recommendations for a session."
+    }
+  }
+}

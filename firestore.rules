@@ -1,0 +1,130 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Document ID: {uid}
+    // Fields:
+    //   - uid: string (required)
+    //   - email: string (required)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
+    //   - role: string (required, 'patient' or 'doctor')
+    //   - licenseId: string (optional, for doctors)
+    //   - isVerified: bool (optional, for doctors)
+    //
+    // Collection: sessions
+    // Document ID: {sessionId}
+    // Fields:
+    //   - patientId: string (required)
+    //   - doctorId: string (required)
+    //   - status: string (required, 'pending', 'accepted', 'rejected', 'completed')
+    //   - scheduledAt: timestamp (required)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: sessions/{sessionId}/messages
+    // Document ID: {messageId}
+    // Fields:
+    //   - senderId: string (required)
+    //   - text: string (required)
+    //   - timestamp: timestamp (required)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          request.auth.token.email == "poojakarunanidhi05@gmail.com");
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role']) &&
+             data.uid is string && data.uid.size() > 0 &&
+             data.email is string && data.email.size() > 0 &&
+             data.role in ['patient', 'doctor'];
+    }
+
+    function isValidSession(data) {
+      return data.keys().hasAll(['patientId', 'doctorId', 'status', 'scheduledAt', 'createdAt']) &&
+             data.patientId is string && data.doctorId is string &&
+             data.status in ['pending', 'accepted', 'rejected', 'completed'] &&
+             data.scheduledAt is timestamp && data.createdAt is timestamp &&
+             (!('metrics' in data) || (
+               data.metrics is map &&
+               data.metrics.mood is number &&
+               data.metrics.stress is number &&
+               data.metrics.concern is string &&
+               data.metrics.urgency in ['low', 'medium', 'high']
+             )) &&
+             (!('feedback' in data) || (
+               data.feedback is map &&
+               data.feedback.rating is number &&
+               data.feedback.rating >= 1 && data.feedback.rating <= 5 &&
+               (!('comment' in data.feedback) || data.feedback.comment is string)
+             ));
+    }
+
+    function isValidMessage(data) {
+      return data.keys().hasAll(['senderId', 'text', 'timestamp']) &&
+             data.senderId is string && data.text is string && data.text.size() > 0 &&
+             data.timestamp is timestamp;
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && 
+                      request.resource.data.role == resource.data.role;
+    }
+
+    match /sessions/{sessionId} {
+      function isParticipant() {
+        return isAuthenticated() && (request.auth.uid == resource.data.patientId || request.auth.uid == resource.data.doctorId);
+      }
+
+      allow read: if isParticipant();
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.patientId && isValidSession(request.resource.data);
+      allow update: if isParticipant() && isValidSession(request.resource.data) &&
+                      (
+                        // Patient can cancel, finish, or add feedback
+                        (request.auth.uid == resource.data.patientId && (
+                          (resource.data.status == 'pending' && request.resource.data.status == 'rejected') ||
+                          (resource.data.status == 'accepted' && request.resource.data.status == 'completed') ||
+                          (resource.data.status == 'completed' && 'feedback' in request.resource.data && !('feedback' in resource.data))
+                        )) ||
+                        // Doctor can accept, reject, or finish
+                        (request.auth.uid == resource.data.doctorId && (
+                          (resource.data.status == 'pending' && request.resource.data.status in ['accepted', 'rejected']) ||
+                          (resource.data.status == 'accepted' && request.resource.data.status == 'completed')
+                        ))
+                      );
+
+      match /messages/{messageId} {
+        allow read: if isAuthenticated() && (request.auth.uid == get(/databases/$(database)/documents/sessions/$(sessionId)).data.patientId || request.auth.uid == get(/databases/$(database)/documents/sessions/$(sessionId)).data.doctorId);
+        allow create: if isAuthenticated() && request.auth.uid == request.resource.data.senderId && isValidMessage(request.resource.data);
+      }
+
+      match /notes/{noteId} {
+        // Doctor can read/write, patient can only read
+        allow read: if isAuthenticated() && (
+          request.auth.uid == get(/databases/$(database)/documents/sessions/$(sessionId)).data.doctorId ||
+          request.auth.uid == get(/databases/$(database)/documents/sessions/$(sessionId)).data.patientId
+        );
+        allow write: if isAuthenticated() && request.auth.uid == get(/databases/$(database)/documents/sessions/$(sessionId)).data.doctorId;
+      }
+    }
+  }
+}
